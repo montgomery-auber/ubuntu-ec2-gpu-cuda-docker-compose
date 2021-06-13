@@ -1,0 +1,175 @@
+---
+  - name: Install Ubuntu EC2 with GPU
+    hosts: 3.17.36.220
+    gather_facts: yes
+    become: yes 
+    tasks:
+      - name: upgrade all packages
+        apt:
+          name: "*"
+          state: latest
+          update_cache: yes
+      - name: install stuff  
+        apt: 
+          name: 
+            - libglvnd-dev
+            - build-essential
+            - linux-generic 
+            - linux-headers-generic  
+            - cifs-utils  
+            - libelf-dev  
+            - zlib1g-dev 
+            - gcc 
+            - git-lfs
+            - make 
+            - screen
+            - build-essential
+            - python3-mysqldb
+            - python3-dev 
+            - libmysqlclient-dev 
+            - libssl1.1 
+            - libffi-dev 
+            - lm-sensors 
+            - apt-transport-https 
+            - ca-certificates 
+            - curl 
+            - gnupg
+            - gnupg-agent 
+            - software-properties-common
+            - python3-pip 
+            - freeipa-client 
+          state: present
+          install_recommends: yes 
+          #  apt install --no-install-recommends -y xubuntu-desktop  libglvnd-dev  linux-generic linux-headers-generic  cifs-utils  libelf-dev  zlib1g-dev  gcc  git-lfs make  screen build-essential python3-mysqldb python3-dev   libmysqlclient-dev  libssl1.1  libffi-dev  lm-sensors apt-transport-https ca-certificates curl gnupg gnupg-agent software-properties-common
+
+      - name: download nvidia install script
+        get_url:
+          url: https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-ubuntu2004.pin 
+          dest: /etc/apt/preferences.d/cuda-repository-pin-600
+          # https://developer.nvidia.com/cuda-downloads?target_os=Linux&target_arch=x86_64&target_distro=Ubuntutarget_version=2004&target_type=debnetwork
+      - name: add Nvidia key
+        apt_key:
+          url: "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/7fa2af80.pub"
+          state: present
+          #https://docs.ansible.com/ansible/2.3/apt_key_module.html
+      - name: Add Nvidia Repo 
+        apt_repository:
+          repo: deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/ /
+          state: present
+      - name: Install Nvidia Driver
+        apt: 
+          name: 
+            - cuda 
+          update_cache: yes  
+          state: latest 
+          install_recommends: yes
+      
+      - name: Unconditionally reboot the machine with all defaults
+        reboot:
+      - name: add Docker key
+        apt_key:
+          url: "https://download.docker.com/linux/ubuntu/gpg"
+          state: present
+          #https://docs.ansible.com/ansible/2.3/apt_key_module.html
+      - name: Add Docker Repo 
+        apt_repository:
+          repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_lsb.codename }} stable 
+          state: present
+
+      - name: install docker         
+        apt: 
+          name: 
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          update_cache: yes 
+      - name: enable docker on boot
+        systemd:
+          name: docker 
+          enabled: yes
+          state: started
+      - name: Add user ubuntu to docker group          
+        user:
+          name: ubuntu
+          groups: docker 
+          append: yes
+          #sudo usermod -aG docker ubuntu
+          #remove user from group gpasswd -d ubuntu docker
+      - name: Install Docker Module for Python
+        pip:
+          name: docker
+          state: present 
+         # https://nvidia.github.io/nvidia-docker/
+ 
+      - name: add Nvidia Docker key
+        apt_key:
+          url: "https://nvidia.github.io/nvidia-docker/gpgkey"
+          state: present
+      - name: download nvidia docker repo 
+        get_url:
+          url: https://nvidia.github.io/nvidia-docker/ubuntu20.04/nvidia-docker.list  
+          dest: /etc/apt/sources.list.d/nvidia-docker.list
+
+      - name: Install Nvidia Driver
+        apt: 
+          name: 
+            - nvidia-container-toolkit
+            - nvidia-docker2
+          update_cache: yes
+          state: present
+   
+      ### includes stuff for kubernetes
+      - name: create docker network and daemon.json          
+        copy:
+          src: /ansible/playbooks/daemon.json
+          dest: "/etc/docker/daemon.json"
+          owner: root
+      - name: enable UFW
+        ufw:
+          state: enabled
+      
+      - name: download docker-compose 
+        get_url:
+          url: https://github.com/docker/compose/releases/download/1.22.0/docker-compose-Linux-x86_64
+          dest: /usr/local/sbin/docker-compose
+          mode: '0755'
+        
+
+      #https://medium.com/@bitaps.com/ubuntu-ufw-and-docker-security-e840f772e2b4
+      #https://docs.ansible.com/ansible/2.7/modules/ufw_module.html
+      - name: Allow OpenSSH rule
+        ufw:
+          rule: allow
+          name: OpenSSH
+
+      - name: needed Firewall rules tcp
+        ufw:
+          rule: allow
+          proto: tcp
+          port:  "{{ item }}"
+        with_list:
+          - 22
+          - 8081
+          - 6783
+          - 10250
+          - 10255
+          - 30000:32767
+          - 10050
+          - 80
+          - 88
+          - 389
+          - 464 
+      - name: needed Firewall rules udp 
+        ufw:
+          rule: allow
+          proto: udp 
+          port: "{{ item }}"
+        with_list:
+          - 161:162
+          - 88
+          - 464
+          - 123
+
+
+# ansible-playbook playbooks/install-ubuntu-monster.yaml #--start-at-task="create gitcreds with content" # --step
+
